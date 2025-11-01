@@ -1,18 +1,18 @@
 // controllers/chat.controller.js
 const Message = require("../models/Message");
-const retrieveContext = require("../utils/retrieveContext");
 const { getGeminiModel, GEMINI_MODEL } = require("../services/gemini.service");
+const { findRelevantChunks } = require("../services/search.service");
 
 async function getMessages(req, res) {
   try {
     const messages = await Message.find().sort({ createdAt: 1 });
-    const formattedMessages = messages.map((msg) => ({
-      role: msg.role,
-      parts: [{ text: msg.parts }],
+    const formattedMessages = messages.map((m) => ({
+      role: m.role,
+      parts: [{ text: m.parts }],
     }));
     return res.json(formattedMessages);
-  } catch (error) {
-    console.error("Error fetching messages:", error);
+  } catch (err) {
+    console.error("Error fetching messages:", err);
     return res.status(500).json({ error: "Failed to fetch messages" });
   }
 }
@@ -24,34 +24,38 @@ async function chat(req, res) {
       return res.status(400).json({ error: "Message is required" });
     }
 
-    // 1. save user message
+    // 1. save user msg
     await new Message({ role: "user", parts: userMessageText }).save();
 
-    // 2. RAG
-    const contextChunks = retrieveContext(userMessageText);
-    const contextText =
-      contextChunks.length > 0
-        ? contextChunks
-            .map(
-              (chunk) => `Source: ${chunk.source}\nText: ${chunk.text}`
-            )
-            .join("\n\n---\n\n")
-        : "No specific context found. Answer based on general knowledge but state that this is not from a specific legal document.";
+    // 2. get relevant chunks from DB (RAG)
+    const relevant = await findRelevantChunks(userMessageText, 5);
+    console.log(`RAG: found ${relevant.length} doc chunks from Mongo`);
 
-    // 3. build instruction
-    const systemInstructionString = `You are a helpful legal information assistant for Sri Lanka.
-Your user is a citizen with a legal doubt.
-You MUST answer the user's question based *ONLY* on the "PROVIDED CONTEXT" below.
-Do not use any other knowledge or personal opinions.
-If the provided context is not sufficient to answer the question, clearly state that you do not have that specific information in your knowledge base.
-Be clear, concise, and easy to understand.
-ALWAYS state that this is not legal advice and the user should consult a lawyer.
+    let contextText;
+    if (!relevant.length) {
+      contextText =
+        "No specific context found. Answer based on general Sri Lankan legal principles, but tell the user this was not from the uploaded legal documents.";
+    } else {
+      contextText = relevant
+        .map(
+          (doc, idx) =>
+            `# Source ${idx + 1}: ${doc.source} (score: ${doc.score.toFixed(
+              4
+            )})\n${doc.text}`
+        )
+        .join("\n\n---\n\n");
+    }
+
+    const instruction = `You are a helpful legal information assistant for Sri Lanka.
+You MUST base your answer ONLY on the PROVIDED CONTEXT below.
+If the context does not contain the exact provision or section, say so clearly.
+Keep the answer short and clear.
+ALWAYS end with: "This is not legal advice. Please consult a qualified lawyer in Sri Lanka."
 
 ---
 PROVIDED CONTEXT:
 ${contextText}
----
-`;
+---`;
 
     const model = getGeminiModel();
 
@@ -59,41 +63,35 @@ ${contextText}
       history: [
         {
           role: "user",
-          parts: [{ text: systemInstructionString }],
+          parts: [{ text: instruction }],
         },
         {
           role: "model",
           parts: [
             {
-              text: "Understood. I will act as a helpful legal information assistant for Sri Lanka and will only use the context provided to answer the user's question.",
+              text: "Understood. I will answer only using the provided context and add the legal disclaimer.",
             },
           ],
         },
       ],
     });
 
-    // 4. ask the actual user question
     const result = await chatSession.sendMessage(
-      `User question: ${userMessageText}
-If the answer is not in the provided context, say you don't have it.`
+      `User question: ${userMessageText}`
     );
+    const aiText = result.response.text();
 
-    const aiResponseText = result.response.text();
+    // save ai msg
+    await new Message({ role: "model", parts: aiText }).save();
 
-    // 5. save ai message
-    await new Message({ role: "model", parts: aiResponseText }).save();
-
-    // 6. send to client
     return res.json({
       role: "model",
-      parts: [{ text: aiResponseText }],
+      parts: [{ text: aiText }],
     });
-  } catch (error) {
-    console.error("Error in /api/chat:", error);
-
-    const fallback = `I'm sorry, I encountered an internal error (model: ${GEMINI_MODEL}). Please try again later.`;
+  } catch (err) {
+    console.error("Error in /api/chat:", err);
+    const fallback = `I'm sorry, I couldn't process that right now (model: ${GEMINI_MODEL}).`;
     await new Message({ role: "model", parts: fallback }).save();
-
     return res.status(500).json({
       role: "model",
       parts: [{ text: fallback }],
