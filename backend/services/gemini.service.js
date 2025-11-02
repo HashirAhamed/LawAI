@@ -3,7 +3,8 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 // read from env first, fall back to your working one
 const GEMINI_MODEL =
-  process.env.GEMINI_MODEL || "gemini-2.5-flash-preview-09-2025";
+  process.env.GEMINI_MODEL; 
+  //|| "gemini-2.5-flash-preview-09-2025";
 
 if (!process.env.GOOGLE_API_KEY) {
   console.warn("⚠️ GOOGLE_API_KEY is not set in .env");
