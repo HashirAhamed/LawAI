@@ -3,96 +3,140 @@ import React, { useState, useEffect } from "react";
 import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
 import {
-  getConversations,
-  createConversation,
+    getConversations,
+    createConversation,
 } from "../api/conversation";
 import { getMessages, sendMessage } from "../api/messages";
 
 function ChatPage() {
-  const [conversations, setConversations] = useState([]);
-  const [activeConversation, setActiveConversation] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+    const [conversations, setConversations] = useState([]);
+    const [activeConversation, setActiveConversation] = useState(null);
+    const [messages, setMessages] = useState([]);
+    const [input, setInput] = useState("");
+    const [isLoading, setIsLoading] = useState(false);
 
-  // load convos on mount
-  useEffect(() => {
-    (async () => {
-      const convos = await getConversations();
-      setConversations(convos);
-    })();
-  }, []);
+    // load convos on mount
+    useEffect(() => {
+        (async () => {
+            const convos = await getConversations();
+            setConversations(convos);
+        })();
+    }, []);
 
-  // load messages when active convo changes
-  useEffect(() => {
-    if (!activeConversation) return;
-    (async () => {
-      setIsLoading(true);
-      const msgs = await getMessages(activeConversation._id);
-      setMessages(msgs);
-      setIsLoading(false);
-    })();
-  }, [activeConversation]);
+    // load messages when active convo changes
+    useEffect(() => {
+        if (!activeConversation) return;
+        (async () => {
+            setIsLoading(true);
+            const msgs = await getMessages(activeConversation._id);
+            setMessages(msgs);
+            setIsLoading(false);
+        })();
+    }, [activeConversation]);
 
-  const handleNewChat = async () => {
-    const newChat = await createConversation("New chat");
-    setConversations((prev) => [newChat, ...prev]);
-    setActiveConversation(newChat);
-    setMessages([]);
-  };
+    const handleNewChat = async () => {
+        const newChat = await createConversation("New chat");
+        setConversations((prev) => [newChat, ...prev]);
+        setActiveConversation(newChat);
+        setMessages([]);
+    };
 
-  const handleSelectChat = (chat) => {
-    setActiveConversation(chat);
-  };
+    const handleSelectChat = (chat) => {
+        setActiveConversation(chat);
+    };
 
-  const handleSend = async (e) => {
-    e.preventDefault();
-    if (!input.trim() || !activeConversation) return;
+    // inside ChatPage.jsx (or wherever you send messages)
+    const handleSend = async (e) => {
+        e.preventDefault();
+        if (!input.trim() || !activeConversation) return;
 
-    const userMsg = { role: "user", parts: [{ text: input }] };
-    setMessages((prev) => [...prev, userMsg]);
-    const toSend = input;
-    setInput("");
-    setIsLoading(true);
+        const userMsg = { role: "user", parts: [{ text: input }] };
+        setMessages((prev) => [...prev, userMsg]);
 
-    try {
-      const aiMsg = await sendMessage(activeConversation._id, toSend);
-      setMessages((prev) => [...prev, aiMsg]);
-    } catch (err) {
-      console.error(err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "model",
-          parts: [
-            {
-              text: "Sorry, I ran into an error. Please try again.",
-            },
-          ],
-        },
-      ]);
-    }
-    setIsLoading(false);
-  };
+        const toSend = input;
+        setInput("");
 
-  return (
-    <div className="bg-gray-100 h-screen w-full flex font-sans">
-      <Sidebar
-        conversations={conversations}
-        activeConversation={activeConversation}
-        onNewChat={handleNewChat}
-        onSelect={handleSelectChat}
-      />
-      <ChatWindow
-        activeConversation={activeConversation}
-        messages={messages}
-        input={input}
-        setInput={setInput}
-        isLoading={isLoading}
-        onSend={handleSend}
-      />
-    </div>
-  );
+        // Optimistically add empty AI message to fill as we stream
+        const aiPlaceholder = { role: "model", parts: [{ text: "" }] };
+        setMessages((prev) => [...prev, aiPlaceholder]);
+
+        try {
+            const resp = await fetch(
+                `http://localhost:5000/api/conversations/${activeConversation._id}/stream`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: toSend }),
+                }
+            );
+
+            if (!resp.ok || !resp.body) {
+                throw new Error("Stream failed to start");
+            }
+
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+
+            let done = false;
+            while (!done) {
+                const { value, done: doneReading } = await reader.read();
+                done = doneReading;
+                if (value) {
+                    const chunk = decoder.decode(value, { stream: true });
+                    // SSE sends multiple "data: ..." lines per chunk; split & parse
+                    chunk
+                        .split("\n\n")
+                        .filter(Boolean)
+                        .forEach((line) => {
+                            if (!line.startsWith("data:")) return;
+                            const payload = JSON.parse(line.replace(/^data:\s*/, ""));
+                            if (payload.type === "delta") {
+                                const piece = payload.text || "";
+                                // append piece to the LAST message (AI placeholder)
+                                setMessages((prev) => {
+                                    const next = [...prev];
+                                    const last = next[next.length - 1];
+                                    if (last?.role === "model") {
+                                        last.parts[0].text += piece;
+                                    }
+                                    return next;
+                                });
+                            }
+                        });
+                }
+            }
+        } catch (err) {
+            console.error("Streaming error:", err);
+            setMessages((prev) => {
+                const next = [...prev];
+                const last = next[next.length - 1];
+                if (last?.role === "model") {
+                    last.parts[0].text =
+                        "Sorry, I ran into a streaming error. Please try again.";
+                }
+                return next;
+            });
+        }
+    };
+
+    return (
+        <div className="bg-gray-100 h-screen w-full flex font-sans">
+            <Sidebar
+                conversations={conversations}
+                activeConversation={activeConversation}
+                onNewChat={handleNewChat}
+                onSelect={handleSelectChat}
+            />
+            <ChatWindow
+                activeConversation={activeConversation}
+                messages={messages}
+                input={input}
+                setInput={setInput}
+                isLoading={isLoading}
+                onSend={handleSend}
+            />
+        </div>
+    );
 }
 
 export default ChatPage;

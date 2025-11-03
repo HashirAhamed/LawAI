@@ -68,11 +68,11 @@ async function chat(req, res) {
       contextText =
         relevant.length > 0
           ? relevant
-              .map(
-                (doc, i) =>
-                  `#${i + 1} Source: ${doc.source}\n${doc.text}`
-              )
-              .join("\n\n---\n\n")
+            .map(
+              (doc, i) =>
+                `#${i + 1} Source: ${doc.source}\n${doc.text}`
+            )
+            .join("\n\n---\n\n")
           : "No specific context found. Answer generally for Sri Lankan law, but say it is not from the uploaded documents.";
 
       var finalUserPrompt = userMessageText;
