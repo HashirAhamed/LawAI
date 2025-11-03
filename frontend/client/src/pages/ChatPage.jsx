@@ -5,6 +5,7 @@ import ChatWindow from "../components/ChatWindow";
 import {
     getConversations,
     createConversation,
+    deleteConversation,
 } from "../api/conversation";
 import { getMessages, sendMessage } from "../api/messages";
 
@@ -119,6 +120,24 @@ function ChatPage() {
         }
     };
 
+    const handleDeleteChat = async (chat) => {
+        const ok = window.confirm(`Delete chat "${chat.title || "Untitled Chat"}"?`);
+        if (!ok) return;
+        try {
+            await deleteConversation(chat._id);
+            // remove from local state
+            setConversations((prev) => prev.filter((c) => c._id !== chat._id));
+            // if we deleted the active one, clear selection
+            if (activeConversation?._id === chat._id) {
+                setActiveConversation(null);
+                setMessages([]);
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Failed to delete chat. Please try again.");
+        }
+    };
+
     return (
         <div className="bg-gray-100 h-screen w-full flex font-sans">
             <Sidebar
@@ -126,6 +145,7 @@ function ChatPage() {
                 activeConversation={activeConversation}
                 onNewChat={handleNewChat}
                 onSelect={handleSelectChat}
+                onDelete={handleDeleteChat}
             />
             <ChatWindow
                 activeConversation={activeConversation}
