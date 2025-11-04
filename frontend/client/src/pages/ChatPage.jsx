@@ -15,6 +15,7 @@ function ChatPage() {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     // load convos on mount
     useEffect(() => {
@@ -139,24 +140,54 @@ function ChatPage() {
     };
 
     return (
-        <div className="bg-gray-100 h-screen w-full flex font-sans">
-            <Sidebar
-                conversations={conversations}
-                activeConversation={activeConversation}
-                onNewChat={handleNewChat}
-                onSelect={handleSelectChat}
-                onDelete={handleDeleteChat}
-            />
-            <ChatWindow
-                activeConversation={activeConversation}
-                messages={messages}
-                input={input}
-                setInput={setInput}
-                isLoading={isLoading}
-                onSend={handleSend}
-            />
+        <div className="flex flex-col md:flex-row h-screen w-full bg-gray-100 font-sans overflow-hidden">
+
+            {/* SIDEBAR — collapsible on mobile */}
+            <div
+                className={`fixed md:static top-0 left-0 z-40 w-64 h-full bg-white border-r border-gray-300 transform 
+      ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} 
+      md:translate-x-0 transition-transform duration-300 ease-in-out`}
+            >
+                <Sidebar
+                    conversations={conversations}
+                    activeConversation={activeConversation}
+                    onNewChat={handleNewChat}
+                    onSelect={(chat) => {
+                        handleSelectChat(chat);
+                        setSidebarOpen(false); // auto-close drawer on mobile
+                    }}
+                    onDelete={handleDeleteChat}
+                />
+            </div>
+
+            {/* CHAT AREA */}
+            <div className="flex-1 flex flex-col h-screen md:h-full relative">
+
+                {/* MOBILE HEADER */}
+                <div className="flex items-center justify-between p-3 border-b bg-white md:hidden">
+                    <button
+                        onClick={() => setSidebarOpen(!sidebarOpen)}
+                        className="text-gray-700 text-xl"
+                    >
+                        ☰
+                    </button>
+                    <h2 className="font-semibold text-base">LawAI Assistant</h2>
+                    <div className="w-6" />
+                </div>
+
+                {/* CHAT WINDOW */}
+                <ChatWindow
+                    activeConversation={activeConversation}
+                    messages={messages}
+                    input={input}
+                    setInput={setInput}
+                    isLoading={isLoading}
+                    onSend={handleSend}
+                />
+            </div>
         </div>
     );
+
 }
 
 export default ChatPage;
