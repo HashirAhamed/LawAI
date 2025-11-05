@@ -8,7 +8,7 @@ function ChatWindow({
   messages,
   input,
   setInput,
-  isLoading,
+  isStreaming,
   onSend,
 }) {
   return (
@@ -31,7 +31,7 @@ function ChatWindow({
         <>
           {/* Message list area */}
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            <MessageList messages={messages} isLoading={isLoading} />
+            <MessageList messages={messages} isStreaming={isStreaming} />
           </div>
 
           {/* Sticky input at bottom */}
@@ -41,7 +41,7 @@ function ChatWindow({
                 value={input}
                 onChange={setInput}
                 onSubmit={onSend}
-                disabled={isLoading}
+                disabled={isStreaming}
               />
             </div>
           </div>

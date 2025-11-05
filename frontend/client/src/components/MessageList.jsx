@@ -8,12 +8,12 @@ marked.setOptions({
   gfm: true,     // GitHub-flavored markdown (lists, tables)
 });
 
-function MessageList({ messages, isLoading }) {
+function MessageList({ messages, isStreaming }) {
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, isStreaming]);
 
   const renderHtml = (text, role) => {
     // Prefix with speaker label in markdown so it bolds neatly
@@ -34,8 +34,8 @@ function MessageList({ messages, isLoading }) {
           <div
             key={key}
             className={`py-2 px-3.5 rounded-xl max-w-[85%] sm:max-w-[75%] leading-relaxed ${isUser
-                ? "bg-stone-200 text-gray-800 self-end"
-                : "bg-gray-50 text-gray-700 self-start border border-gray-200"
+              ? "bg-stone-200 text-gray-800 self-end"
+              : "bg-gray-50 text-gray-700 self-start border border-gray-200"
               }`}
           >
             <div
@@ -52,13 +52,17 @@ function MessageList({ messages, isLoading }) {
         );
       })}
 
-      {isLoading && (
-        <div className="py-2 px-3.5 rounded-xl max-w-[85%] sm:max-w-[75%] bg-gray-200 text-gray-900 self-start">
-          <p className="m-0">
-            <strong>AI:</strong> Thinking...
-          </p>
+      {isStreaming && (
+        <div className="py-2 px-3.5 rounded-xl max-w-[80%] bg-gray-200 text-gray-900 self-start flex items-center space-x-2">
+          {/* <span className="font-semibold">AI:</span> */}
+          <span className="flex space-x-1">
+            <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+            <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+            <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></span>
+          </span>
         </div>
       )}
+
 
       <div ref={messagesEndRef} />
     </div>

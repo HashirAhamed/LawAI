@@ -14,8 +14,9 @@ function ChatPage() {
     const [activeConversation, setActiveConversation] = useState(null);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState("");
-    const [isLoading, setIsLoading] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [isStreaming, setIsStreaming] = useState(false);
+
 
     // load convos on mount
     useEffect(() => {
@@ -29,10 +30,10 @@ function ChatPage() {
     useEffect(() => {
         if (!activeConversation) return;
         (async () => {
-            setIsLoading(true);
+            setIsStreaming(true);
             const msgs = await getMessages(activeConversation._id);
             setMessages(msgs);
-            setIsLoading(false);
+            setIsStreaming(false);
         })();
     }, [activeConversation]);
 
@@ -68,6 +69,7 @@ function ChatPage() {
         const aiPlaceholder = { _id: aiId, role: "model", parts: [{ text: "" }] };
         setMessages(prev => [...prev, aiPlaceholder]);
 
+        setIsStreaming(true);
         try {
             const resp = await fetch(
                 `http://localhost:5000/api/conversations/${activeConversation._id}/stream`,
@@ -129,6 +131,7 @@ function ChatPage() {
                 return next;
             });
         } finally {
+            setIsStreaming(false);
             sendingRef.current = false; // allow next send
         }
     };
@@ -195,7 +198,7 @@ function ChatPage() {
                     messages={messages}
                     input={input}
                     setInput={setInput}
-                    isLoading={isLoading}
+                    isStreaming={isStreaming}
                     onSend={handleSend}
                 />
             </div>
