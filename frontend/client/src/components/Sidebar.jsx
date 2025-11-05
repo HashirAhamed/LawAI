@@ -2,7 +2,7 @@
 import React from "react";
 import { FaRegTrashAlt } from "react-icons/fa";
 import { FiEdit2, FiCheck, FiX } from "react-icons/fi";
-import logo from "../../public/logo1.png";
+
 
 function Sidebar({
   conversations = [],
@@ -169,8 +169,8 @@ function Sidebar({
 
       {/* --- FOOTER --- */}
       <div className="px-4 py-3 flex items-center justify-center text-lg text-slate-900 border-t border-gray-200">
-        <img src={logo} alt="Logo" width={36} height={36} className="mr-2" />
-        <h1 className="font-semibold">Legalynx</h1>
+        <img src="./logo1.png" alt="Logo" width={36} height={36} className="mr-2" />
+        <h1 className="font-semibold">LibraAI</h1>
       </div>
     </div>
   );
