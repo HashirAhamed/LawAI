@@ -4,6 +4,7 @@ const Conversation = require("../models/Conversation");
 const { getGeminiModel, GEMINI_MODEL } = require("../services/gemini.service");
 const { findRelevantChunks } = require("../services/search.service");
 const { isFollowupMessage } = require("../utils/followup");
+const { makeAutoTitleFrom } = require("../services/autoTitle.service");
 
 async function chat(req, res) {
   try {
@@ -132,7 +133,12 @@ ${originalQuestion}
 
     // update conversation timestamp / title if needed
     convo.updatedAt = new Date();
-    await convo.save();
+    convo = await Conversation.findById(activeConversationId);
+    if (convo && (!convo.title || convo.title === "New chat")) {
+      const auto = makeAutoTitleFrom(userMessageText);
+      convo.title = auto;
+      await convo.save();
+    }
 
     return res.json({ role: "model", parts: [{ text: aiText }] });
   } catch (err) {

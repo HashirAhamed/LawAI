@@ -6,6 +6,7 @@ import {
     getConversations,
     createConversation,
     deleteConversation,
+    renameConversation,
 } from "../api/conversation";
 import { getMessages, sendMessage } from "../api/messages";
 
@@ -68,6 +69,18 @@ function ChatPage() {
         const aiId = `m_${uid()}`;
         const aiPlaceholder = { _id: aiId, role: "model", parts: [{ text: "" }] };
         setMessages(prev => [...prev, aiPlaceholder]);
+
+        // in ChatPage.jsx inside handleSend(text)
+        if (activeConversation && (activeConversation.title === "New chat" || !activeConversation.title)) {
+            const guess = text.split(/\s+/).slice(0, 6).join(" ");
+            const short = (guess.length > 48 ? guess.slice(0, 48) + "…" : guess) || "New chat";
+            // update local state so sidebar shows it right away
+            setConversations(prev =>
+                prev.map(c => c._id === activeConversation._id ? { ...c, title: short } : c)
+            );
+            // fire-and-forget server rename
+            renameConversation(activeConversation._id, short).catch(() => { });
+        }
 
         setIsStreaming(true);
         try {
@@ -156,6 +169,21 @@ function ChatPage() {
         }
     };
 
+    const handleRename = async (id, title) => {
+        // optimistic UI update
+        setConversations(prev =>
+            prev.map(c => (c._id === id ? { ...c, title } : c))
+        );
+        try {
+            await renameConversation(id, title);
+        } catch (e) {
+            // rollback if needed
+            setConversations(prev =>
+                prev.map(c => (c._id === id ? { ...c, title: "New chat" } : c))
+            );
+        }
+    };
+
     return (
         <div className="flex flex-col md:flex-row h-screen w-full bg-gray-200 font-sans overflow-hidden">
 
@@ -174,6 +202,8 @@ function ChatPage() {
                         setSidebarOpen(false); // auto-close drawer on mobile
                     }}
                     onDelete={handleDeleteChat}
+                    onRename={handleRename}
+                    onClose={() => setSidebarOpen(false)}
                 />
             </div>
 

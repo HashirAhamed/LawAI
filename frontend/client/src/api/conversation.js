@@ -14,10 +14,21 @@ export async function createConversation(title = "New chat") {
 }
 
 export async function deleteConversation(id) {
-  const res = await fetch(`http://localhost:5000/api/conversations/${id}`, {
+  const res = await fetch(`${API_URL}/conversations/${id}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error("Failed to delete conversation");
   return res.json();
 }
 
+
+// src/api/conversations.js
+export async function renameConversation(id, title) {
+  const res = await fetch(`${API_URL}/conversations/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error("Failed to rename");
+  return res.json();
+}

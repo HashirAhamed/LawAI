@@ -61,9 +61,31 @@ async function deleteConversation(req, res) {
     }
 };
 
+// RENAME /api/conversations/:id
+async function renameConversation(req, res) {
+    try {
+        const { id } = req.params;
+        const { title } = req.body;
+        if (!title || !title.trim()) {
+            return res.status(400).json({ error: "Title is required" });
+        }
+        const convo = await Conversation.findByIdAndUpdate(
+            id,
+            { title: title.trim() },
+            { new: true }
+        );
+        if (!convo) return res.status(404).json({ error: "Not found" });
+        res.json(convo);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: "Failed to rename conversation" });
+    }
+};
+
 module.exports = {
     createConversation,
     listConversations,
     getMessages,
     deleteConversation,
+    renameConversation,
 };
