@@ -1,5 +1,5 @@
 // src/pages/ChatPage.jsx
-import React, { useState, useEffect } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
 import {
@@ -47,20 +47,26 @@ function ChatPage() {
         setActiveConversation(chat);
     };
 
-    // inside ChatPage.jsx (or wherever you send messages)
-    const handleSend = async (e) => {
-        e.preventDefault();
-        if (!input.trim() || !activeConversation) return;
+    const sendingRef = useRef(false); // hard guard against double send in dev/StrictMode
+    const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-        const userMsg = { role: "user", parts: [{ text: input }] };
-        setMessages((prev) => [...prev, userMsg]);
+    const handleSend = async (messageText) => {
+        const text = (messageText ?? "").trim();
+        if (!text || !activeConversation?._id) return;
 
-        const toSend = input;
+        if (sendingRef.current) return;   // ⛔ prevents a second immediate call
+        sendingRef.current = true;
+
+        // 1) add user message with a stable _id
+        const userId = `u_${uid()}`;
+        const userMsg = { _id: userId, role: "user", parts: [{ text }] };
+        setMessages(prev => [...prev, userMsg]);
         setInput("");
 
-        // Optimistically add empty AI message to fill as we stream
-        const aiPlaceholder = { role: "model", parts: [{ text: "" }] };
-        setMessages((prev) => [...prev, aiPlaceholder]);
+        // 2) add a SINGLE AI placeholder with a stable _id
+        const aiId = `m_${uid()}`;
+        const aiPlaceholder = { _id: aiId, role: "model", parts: [{ text: "" }] };
+        setMessages(prev => [...prev, aiPlaceholder]);
 
         try {
             const resp = await fetch(
@@ -68,58 +74,66 @@ function ChatPage() {
                 {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ message: toSend }),
+                    body: JSON.stringify({ message: text }),
                 }
             );
-
-            if (!resp.ok || !resp.body) {
-                throw new Error("Stream failed to start");
-            }
+            if (!resp.ok || !resp.body) throw new Error("Stream failed to start");
 
             const reader = resp.body.getReader();
             const decoder = new TextDecoder("utf-8");
 
-            let done = false;
-            while (!done) {
-                const { value, done: doneReading } = await reader.read();
-                done = doneReading;
-                if (value) {
-                    const chunk = decoder.decode(value, { stream: true });
-                    // SSE sends multiple "data: ..." lines per chunk; split & parse
-                    chunk
-                        .split("\n\n")
-                        .filter(Boolean)
-                        .forEach((line) => {
-                            if (!line.startsWith("data:")) return;
-                            const payload = JSON.parse(line.replace(/^data:\s*/, ""));
-                            if (payload.type === "delta") {
-                                const piece = payload.text || "";
-                                // append piece to the LAST message (AI placeholder)
-                                setMessages((prev) => {
-                                    const next = [...prev];
-                                    const last = next[next.length - 1];
-                                    if (last?.role === "model") {
-                                        last.parts[0].text += piece;
-                                    }
-                                    return next;
-                                });
-                            }
+            // buffer to handle partial SSE frames
+            let buffer = "";
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                if (!value) continue;
+
+                buffer += decoder.decode(value, { stream: true });
+
+                // split on SSE frame separator
+                const frames = buffer.split("\n\n");
+                buffer = frames.pop() ?? ""; // keep partial for next loop
+
+                for (const frame of frames) {
+                    if (!frame.startsWith("data:")) continue;
+                    const json = frame.replace(/^data:\s*/, "");
+                    let payload;
+                    try {
+                        payload = JSON.parse(json);
+                    } catch { continue; }
+
+                    if (payload.type === "delta") {
+                        const piece = payload.text || "";
+                        setMessages(prev => {
+                            const next = [...prev];
+                            const idx = next.findIndex(m => m._id === aiId);
+                            if (idx !== -1) next[idx] = {
+                                ...next[idx],
+                                parts: [{ text: next[idx].parts[0].text + piece }],
+                            };
+                            return next;
                         });
+                    }
                 }
             }
         } catch (err) {
             console.error("Streaming error:", err);
-            setMessages((prev) => {
+            setMessages(prev => {
                 const next = [...prev];
-                const last = next[next.length - 1];
-                if (last?.role === "model") {
-                    last.parts[0].text =
-                        "Sorry, I ran into a streaming error. Please try again.";
-                }
+                const idx = next.findIndex(m => m._id === aiId);
+                if (idx !== -1) next[idx] = {
+                    ...next[idx],
+                    parts: [{ text: "Sorry, I ran into a streaming error. Please try again." }],
+                };
                 return next;
             });
+        } finally {
+            sendingRef.current = false; // allow next send
         }
     };
+
+
 
     const handleDeleteChat = async (chat) => {
         const ok = window.confirm(`Delete chat "${chat.title || "Untitled Chat"}"?`);
