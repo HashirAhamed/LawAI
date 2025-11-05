@@ -17,7 +17,7 @@ function MessageList({ messages, isLoading }) {
 
   const renderHtml = (text, role) => {
     // Prefix with speaker label in markdown so it bolds neatly
-    const md = `**${role === "user" ? "You" : "AI"}:** ${text}`;
+    const md = `${role === "user" ? "" : ""} ${text}`;
     const html = marked.parse(md);
     return DOMPurify.sanitize(html);
   };
@@ -28,36 +28,18 @@ function MessageList({ messages, isLoading }) {
         const isUser = msg.role === "user";
         return (
           <div
-            key={index}
-            className={`py-2 px-3.5 rounded-xl max-w-[80%] leading-relaxed ${
-              isUser
-                ? "bg-blue-600 text-white self-end"
-                : "bg-gray-50 text-gray-900 self-start border border-gray-200"
-            }`}
+            className={`py-2 px-3.5 rounded-xl max-w-[80%] leading-relaxed ${isUser
+                ? "bg-stone-200 text-gray-800 self-end"
+                : "bg-gray-50 text-gray-600 self-start border border-gray-200 prose"
+              }`}
           >
-            {/* Optional mini header for AI bubbles */}
-            {!isUser && (
-              <>
-                <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">
-                  AI • Legal info
-                </div>
-                <div className="h-px bg-gray-200 mb-2" />
-              </>
-            )}
-
             <div
-              className={
-                isUser
-                  ? // User bubble: inverted prose so links/lists render nicely on dark bg
-                    "prose prose-invert prose-sm max-w-[70ch] prose-headings:mt-2 prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5"
-                  : // AI bubble: standard prose
-                    "prose prose-sm max-w-[70ch] prose-headings:mt-2 prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5"
-              }
               dangerouslySetInnerHTML={{
                 __html: renderHtml(msg.parts?.[0]?.text ?? "", msg.role),
               }}
             />
           </div>
+
         );
       })}
 

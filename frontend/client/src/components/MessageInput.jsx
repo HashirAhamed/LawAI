@@ -10,12 +10,12 @@ function MessageInput({ value, onChange, onSubmit, disabled }) {
         onChange={(e) => onChange(e.target.value)}
         placeholder="Ask a question about Sri Lankan law..."
         disabled={disabled}
-        className="flex-grow border border-gray-300 rounded-full py-2 px-4 text-base mr-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="flex-grow border border-gray-300 rounded-full py-2 px-4 text-base mr-3 focus:outline-none focus:ring-2 focus:ring-stone-800"
       />
       <button
         type="submit"
         disabled={disabled}
-        className="bg-blue-600 text-white border-none rounded-full py-2 px-5 text-base cursor-pointer hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+        className="bg-stone-900 text-white border-none rounded-full py-2 px-5 text-base cursor-pointer hover:bg-stone-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
       >
         Send
       </button>
