@@ -13,7 +13,7 @@ app.use(express.json());
 // List of allowed origins
 const allowedOrigins = [
   'http://localhost:5173', // Your local dev environment
-  'https://law-ai-sigma-two.vercel.app/'
+  'https://law-4toolelm8-hashir-ahameds-projects.vercel.app' // <-- THIS IS YOUR LIVE VERCEL URL
 ];
 
 app.use(cors({
