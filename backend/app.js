@@ -13,7 +13,7 @@ app.use(express.json());
 // List of allowed origins
 const allowedOrigins = [
   'http://localhost:5173', // Your local dev environment
-  'https://law-ai-sigma-two.vercel.app/' // <-- !!! REPLACE THIS with your *actual* Vercel URL !!!
+  'https://law-ai-sigma-two.vercel.app/'
 ];
 
 app.use(cors({
