@@ -1,12 +1,9 @@
 // server.js
 require("dotenv").config();
 const app = require("./app");
-const cors = require("cors");
+// const cors = require("cors"); // No longer needed here
 
-app.use(cors({
-  origin: process.env.CLIENT_ORIGIN, 
-  methods: ["GET","POST","PATCH","DELETE","OPTIONS"],
-}));
+// The CORS policy is now inside app.js
 
 const PORT = process.env.PORT || 5000;
 
