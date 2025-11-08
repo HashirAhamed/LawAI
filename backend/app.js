@@ -53,7 +53,6 @@ app.use((req, _res, next) => {
 
 // 🧠 Enable CORS before JSON parsing or routes
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // Handle preflight globally
 
 // 🧾 Body parser
 app.use(express.json());
