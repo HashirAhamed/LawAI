@@ -1,39 +1,69 @@
 const express = require("express");
-const cors = require("cors"); // Make sure cors is required here
+const cors = require("cors");
 const connectDB = require("./config/db");
 const chatRoutes = require("./routes/chat.routes");
 const conversationRoutes = require("./routes/conversation.routes");
 
 const app = express();
 
-// middleware
-app.use(express.json());
-
-// --- THIS IS THE CORRECTED CORS POLICY ---
-// List of allowed origins
-const allowedOrigins = [
-  'http://localhost:5173', // Your local dev environment
-  'https://law-4toolelm8-hashir-ahameds-projects.vercel.app' // <-- THIS IS YOUR LIVE VERCEL URL
+/**
+ * ------------------ 🔒 Robust CORS Setup ------------------
+ * ✅ Allows:
+ *   - Your production frontend (from env: CLIENT_ORIGIN)
+ *   - All Vercel preview deployments (*.vercel.app)
+ *   - Local development (localhost:5173)
+ * ✅ Handles preflight requests
+ * ✅ Avoids crashes on unapproved origins
+ * ✅ Debug logs origin + route
+ * -----------------------------------------------------------
+ */
+const allowList = [
+  process.env.CLIENT_ORIGIN, // e.g. https://law-ai-sigma-two.vercel.app (set this in Railway)
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  /\.vercel\.app$/, // Allow Vercel preview URLs
 ];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps or curl requests)
+const corsOptions = {
+  origin(origin, callback) {
+    // Allow server-to-server (no Origin header)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  }
-}));
-// ----------------------------------------
 
-// db
+    const allowed = allowList.some(entry =>
+      entry instanceof RegExp ? entry.test(origin) : entry === origin
+    );
+
+    if (allowed) return callback(null, true);
+    console.warn("🚫 CORS blocked request from:", origin);
+    return callback(new Error("Not allowed by CORS"), false);
+  },
+  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false, // Only true if you use cookies or sessions
+  maxAge: 86400, // Cache preflight for 24h
+};
+
+// 🔍 Debug incoming origins (helpful during deployment)
+app.use((req, _res, next) => {
+  if (req.headers.origin) {
+    console.log("🌍 Incoming request:", req.headers.origin, "| Path:", req.path);
+  }
+  next();
+});
+
+// 🧠 Enable CORS before JSON parsing or routes
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // Handle preflight globally
+
+// 🧾 Body parser
+app.use(express.json());
+
+// 🧩 Connect to MongoDB
 connectDB();
 
-// routes
+// 🧭 Routes
 app.use("/api", chatRoutes);
 app.use("/api/conversations", conversationRoutes);
 
+// ✅ Export for server.js
 module.exports = app;
