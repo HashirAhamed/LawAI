@@ -2,6 +2,7 @@
 import React from "react";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
+import EmptyState from "./EmptyState";
 
 function ChatWindow({
   activeConversation,
@@ -24,8 +25,13 @@ function ChatWindow({
 
       {/* Chat area */}
       {!activeConversation ? (
-        <div className="flex-grow flex items-center justify-center text-gray-500">
-          Select or start a chat to begin.
+        <div className="flex-grow justify-center overflow-y-auto">
+          <EmptyState
+            value={input}
+            onChange={setInput}
+            onSubmit={onSend}
+            disabled={isStreaming}
+            userName="User" />
         </div>
       ) : (
         <>

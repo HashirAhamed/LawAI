@@ -8,7 +8,7 @@ import {
     deleteConversation,
     renameConversation,
 } from "../api/conversation";
-import { getMessages, sendMessage } from "../api/messages";
+import { getMessages, sendMessages } from "../api/messages";
 
 function ChatPage() {
     const [conversations, setConversations] = useState([]);
@@ -17,24 +17,34 @@ function ChatPage() {
     const [input, setInput] = useState("");
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [isStreaming, setIsStreaming] = useState(false);
+    const suppressNextFetchRef = useRef(false);
 
+    // hard guard against double send in dev/StrictMode
+    const sendingRef = useRef(false);
+    const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    // load convos on mount
+    // Load conversations on mount
     useEffect(() => {
         (async () => {
             const convos = await getConversations();
-            setConversations(convos);
+            setConversations(convos || []);
         })();
     }, []);
 
-    // load messages when active convo changes
+    // Load messages when active convo changes
     useEffect(() => {
-        if (!activeConversation) return;
         (async () => {
-            setIsStreaming(true);
+            if (!activeConversation?._id) {
+                setMessages([]);
+                return;
+            }
+            if (suppressNextFetchRef.current) {
+                suppressNextFetchRef.current = false;
+                return;
+            }
+
             const msgs = await getMessages(activeConversation._id);
-            setMessages(msgs);
-            setIsStreaming(false);
+            setMessages(msgs || []);
         })();
     }, [activeConversation]);
 
@@ -46,119 +56,16 @@ function ChatPage() {
     };
 
     const handleSelectChat = (chat) => {
+        if (!chat?._id) return;
         setActiveConversation(chat);
     };
-
-    const sendingRef = useRef(false); // hard guard against double send in dev/StrictMode
-    const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-    const handleSend = async (messageText) => {
-        const text = (messageText ?? "").trim();
-        if (!text || !activeConversation?._id) return;
-
-        if (sendingRef.current) return;   // ⛔ prevents a second immediate call
-        sendingRef.current = true;
-
-        // 1) add user message with a stable _id
-        const userId = `u_${uid()}`;
-        const userMsg = { _id: userId, role: "user", parts: [{ text }] };
-        setMessages(prev => [...prev, userMsg]);
-        setInput("");
-
-        // 2) add a SINGLE AI placeholder with a stable _id
-        const aiId = `m_${uid()}`;
-        const aiPlaceholder = { _id: aiId, role: "model", parts: [{ text: "" }] };
-        setMessages(prev => [...prev, aiPlaceholder]);
-
-        // in ChatPage.jsx inside handleSend(text)
-        if (activeConversation && (activeConversation.title === "New chat" || !activeConversation.title)) {
-            const guess = text.split(/\s+/).slice(0, 6).join(" ");
-            const short = (guess.length > 48 ? guess.slice(0, 48) + "…" : guess) || "New chat";
-            // update local state so sidebar shows it right away
-            setConversations(prev =>
-                prev.map(c => c._id === activeConversation._id ? { ...c, title: short } : c)
-            );
-            // fire-and-forget server rename
-            renameConversation(activeConversation._id, short).catch(() => { });
-        }
-
-        setIsStreaming(true);
-        try {
-            const resp = await fetch(
-                `http://localhost:5000/api/conversations/${activeConversation._id}/stream`,
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ message: text }),
-                }
-            );
-            if (!resp.ok || !resp.body) throw new Error("Stream failed to start");
-
-            const reader = resp.body.getReader();
-            const decoder = new TextDecoder("utf-8");
-
-            // buffer to handle partial SSE frames
-            let buffer = "";
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-                if (!value) continue;
-
-                buffer += decoder.decode(value, { stream: true });
-
-                // split on SSE frame separator
-                const frames = buffer.split("\n\n");
-                buffer = frames.pop() ?? ""; // keep partial for next loop
-
-                for (const frame of frames) {
-                    if (!frame.startsWith("data:")) continue;
-                    const json = frame.replace(/^data:\s*/, "");
-                    let payload;
-                    try {
-                        payload = JSON.parse(json);
-                    } catch { continue; }
-
-                    if (payload.type === "delta") {
-                        const piece = payload.text || "";
-                        setMessages(prev => {
-                            const next = [...prev];
-                            const idx = next.findIndex(m => m._id === aiId);
-                            if (idx !== -1) next[idx] = {
-                                ...next[idx],
-                                parts: [{ text: next[idx].parts[0].text + piece }],
-                            };
-                            return next;
-                        });
-                    }
-                }
-            }
-        } catch (err) {
-            console.error("Streaming error:", err);
-            setMessages(prev => {
-                const next = [...prev];
-                const idx = next.findIndex(m => m._id === aiId);
-                if (idx !== -1) next[idx] = {
-                    ...next[idx],
-                    parts: [{ text: "Sorry, I ran into a streaming error. Please try again." }],
-                };
-                return next;
-            });
-        } finally {
-            setIsStreaming(false);
-            sendingRef.current = false; // allow next send
-        }
-    };
-
-
 
     const handleDeleteChat = async (chat) => {
         const ok = window.confirm(`Delete chat "${chat.title || "Untitled Chat"}"?`);
         if (!ok) return;
         try {
             await deleteConversation(chat._id);
-            // remove from local state
             setConversations((prev) => prev.filter((c) => c._id !== chat._id));
-            // if we deleted the active one, clear selection
             if (activeConversation?._id === chat._id) {
                 setActiveConversation(null);
                 setMessages([]);
@@ -171,27 +78,101 @@ function ChatPage() {
 
     const handleRename = async (id, title) => {
         // optimistic UI update
-        setConversations(prev =>
-            prev.map(c => (c._id === id ? { ...c, title } : c))
-        );
+        setConversations((prev) => prev.map((c) => (c._id === id ? { ...c, title } : c)));
         try {
             await renameConversation(id, title);
         } catch (e) {
-            // rollback if needed
-            setConversations(prev =>
-                prev.map(c => (c._id === id ? { ...c, title: "New chat" } : c))
-            );
+            // rollback to a safe default if rename fails
+            setConversations((prev) => prev.map((c) => (c._id === id ? { ...c, title: "New chat" } : c)));
+        }
+    };
+
+    // Ensure a conversation exists; if not, create one with a smart initial title
+    const ensureConversation = async (seedText) => {
+        if (activeConversation?._id) return activeConversation;
+
+        const guess = seedText.split(/\s+/).slice(0, 6).join(" ");
+        const title = (guess && (guess.length > 48 ? guess.slice(0, 48) + "…" : guess)) || "New chat";
+
+        const created = await createConversation(title);
+
+        // ⬇️ IMPORTANT: skip the very next fetch triggered by setActiveConversation
+        suppressNextFetchRef.current = true;
+
+        setConversations((prev) => [created, ...prev]);
+        setActiveConversation(created);
+        return created;
+    };
+
+
+    const handleSend = async (messageText) => {
+        const text = (messageText ?? input ?? "").trim();
+        if (!text) return;
+        if (sendingRef.current) return;
+        sendingRef.current = true;
+
+        try {
+            // 1) Ensure we have a conversation
+            const convo = await ensureConversation(text);
+
+            // 2) Append user + single AI placeholder
+            const userId = `u_${uid()}`;
+            const aiId = `m_${uid()}`;
+            setMessages((prev) => [
+                ...prev,
+                { _id: userId, role: "user", parts: [{ text }] },
+                { _id: aiId, role: "model", parts: [{ text: "" }] },
+            ]);
+            setInput("");
+
+            // 3) If server created with generic title, auto-name optimistically
+            if (!convo.title || convo.title === "New chat") {
+                const guess = text.split(/\s+/).slice(0, 6).join(" ");
+                const short = (guess.length > 48 ? guess.slice(0, 48) + "…" : guess) || "New chat";
+                setConversations((prev) => prev.map((c) => (c._id === convo._id ? { ...c, title: short } : c)));
+                // Fire-and-forget server rename
+                renameConversation(convo._id, short).catch(() => { });
+            }
+
+            // 4) Stream the answer
+            setIsStreaming(true);
+            for await (const piece of sendMessages(convo._id, text)) {
+                setMessages((prev) => {
+                    const next = [...prev];
+                    const idx = next.findIndex((m) => m._id === aiId);
+                    if (idx !== -1) {
+                        next[idx] = {
+                            ...next[idx],
+                            parts: [{ text: (next[idx].parts?.[0]?.text || "") + piece }],
+                        };
+                    }
+                    return next;
+                });
+            }
+        } catch (err) {
+            console.error("Streaming error:", err);
+            // Replace the placeholder with an error if something failed
+            setMessages((prev) => {
+                const next = [...prev];
+                const last = next[next.length - 1];
+                if (last?.role === "model") {
+                    last.parts = [{ text: "Sorry, I ran into a streaming error. Please try again." }];
+                }
+                return next;
+            });
+        } finally {
+            setIsStreaming(false);
+            sendingRef.current = false;
         }
     };
 
     return (
         <div className="flex flex-col md:flex-row h-screen w-full bg-gray-200 font-sans overflow-hidden">
-
             {/* SIDEBAR — collapsible on mobile */}
             <div
                 className={`fixed md:static top-0 left-0 z-40 w-64 h-full bg-white border-r border-gray-300 transform 
-      ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} 
-      md:translate-x-0 transition-transform duration-300 ease-in-out`}
+        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} 
+        md:translate-x-0 transition-transform duration-300 ease-in-out`}
             >
                 <Sidebar
                     conversations={conversations}
@@ -209,7 +190,6 @@ function ChatPage() {
 
             {/* CHAT AREA */}
             <div className="flex-1 flex flex-col h-screen md:h-full relative">
-
                 {/* MOBILE HEADER */}
                 <div className="flex items-center justify-between p-3 border-b bg-white md:hidden">
                     <button
@@ -218,7 +198,7 @@ function ChatPage() {
                     >
                         ☰
                     </button>
-                    <h2 className="font-semibold text-base">LawAI Assistant</h2>
+                    <h2 className="font-semibold text-base">LibraAI Assistant</h2>
                     <div className="w-6" />
                 </div>
 
@@ -234,7 +214,6 @@ function ChatPage() {
             </div>
         </div>
     );
-
 }
 
 export default ChatPage;
