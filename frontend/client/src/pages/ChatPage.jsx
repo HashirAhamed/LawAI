@@ -8,7 +8,7 @@ import {
     deleteConversation,
     renameConversation,
 } from "../api/conversation";
-import { getMessages, sendMessage } from "../api/messages";
+import { getMessages, sendMessages } from "../api/messages";
 
 function ChatPage() {
     const [conversations, setConversations] = useState([]);
@@ -56,100 +56,64 @@ function ChatPage() {
         const text = (messageText ?? "").trim();
         if (!text || !activeConversation?._id) return;
 
-        if (sendingRef.current) return;   // ⛔ prevents a second immediate call
+        if (sendingRef.current) return;
         sendingRef.current = true;
 
-        // 1) add user message with a stable _id
+        // 1) add user message
         const userId = `u_${uid()}`;
         const userMsg = { _id: userId, role: "user", parts: [{ text }] };
-        setMessages(prev => [...prev, userMsg]);
+        setMessages((prev) => [...prev, userMsg]);
         setInput("");
 
-        // 2) add a SINGLE AI placeholder with a stable _id
+        // 2) add a single AI placeholder
         const aiId = `m_${uid()}`;
-        const aiPlaceholder = { _id: aiId, role: "model", parts: [{ text: "" }] };
-        setMessages(prev => [...prev, aiPlaceholder]);
+        setMessages((prev) => [...prev, { _id: aiId, role: "model", parts: [{ text: "" }] }]);
 
-        // in ChatPage.jsx inside handleSend(text)
-        if (activeConversation && (activeConversation.title === "New chat" || !activeConversation.title)) {
+        // 3) auto-title first time
+        if (!activeConversation.title || activeConversation.title === "New chat") {
             const guess = text.split(/\s+/).slice(0, 6).join(" ");
             const short = (guess.length > 48 ? guess.slice(0, 48) + "…" : guess) || "New chat";
-            // update local state so sidebar shows it right away
-            setConversations(prev =>
-                prev.map(c => c._id === activeConversation._id ? { ...c, title: short } : c)
+            setConversations((prev) =>
+                prev.map((c) => (c._id === activeConversation._id ? { ...c, title: short } : c))
             );
-            // fire-and-forget server rename
+            // fire-and-forget
             renameConversation(activeConversation._id, short).catch(() => { });
         }
 
         setIsStreaming(true);
         try {
-            const resp = await fetch(
-                `http://localhost:5000/api/conversations/${activeConversation._id}/stream`,
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ message: text }),
-                }
-            );
-            if (!resp.ok || !resp.body) throw new Error("Stream failed to start");
-
-            const reader = resp.body.getReader();
-            const decoder = new TextDecoder("utf-8");
-
-            // buffer to handle partial SSE frames
-            let buffer = "";
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-                if (!value) continue;
-
-                buffer += decoder.decode(value, { stream: true });
-
-                // split on SSE frame separator
-                const frames = buffer.split("\n\n");
-                buffer = frames.pop() ?? ""; // keep partial for next loop
-
-                for (const frame of frames) {
-                    if (!frame.startsWith("data:")) continue;
-                    const json = frame.replace(/^data:\s*/, "");
-                    let payload;
-                    try {
-                        payload = JSON.parse(json);
-                    } catch { continue; }
-
-                    if (payload.type === "delta") {
-                        const piece = payload.text || "";
-                        setMessages(prev => {
-                            const next = [...prev];
-                            const idx = next.findIndex(m => m._id === aiId);
-                            if (idx !== -1) next[idx] = {
-                                ...next[idx],
-                                parts: [{ text: next[idx].parts[0].text + piece }],
-                            };
-                            return next;
-                        });
+            for await (const piece of sendMessages(activeConversation._id, text)) {
+                // append each delta to the placeholder
+                setMessages((prev) => {
+                    const next = [...prev];
+                    const idx = next.findIndex((m) => m._id === aiId);
+                    if (idx !== -1) {
+                        next[idx] = {
+                            ...next[idx],
+                            parts: [{ text: next[idx].parts[0].text + piece }],
+                        };
                     }
-                }
+                    return next;
+                });
             }
         } catch (err) {
             console.error("Streaming error:", err);
-            setMessages(prev => {
+            setMessages((prev) => {
                 const next = [...prev];
-                const idx = next.findIndex(m => m._id === aiId);
-                if (idx !== -1) next[idx] = {
-                    ...next[idx],
-                    parts: [{ text: "Sorry, I ran into a streaming error. Please try again." }],
-                };
+                const idx = next.findIndex((m) => m._id === aiId);
+                if (idx !== -1) {
+                    next[idx] = {
+                        ...next[idx],
+                        parts: [{ text: "Sorry, I ran into a streaming error. Please try again." }],
+                    };
+                }
                 return next;
             });
         } finally {
             setIsStreaming(false);
-            sendingRef.current = false; // allow next send
+            sendingRef.current = false;
         }
     };
-
-
 
     const handleDeleteChat = async (chat) => {
         const ok = window.confirm(`Delete chat "${chat.title || "Untitled Chat"}"?`);
@@ -218,7 +182,7 @@ function ChatPage() {
                     >
                         ☰
                     </button>
-                    <h2 className="font-semibold text-base">LawAI Assistant</h2>
+                    <h2 className="font-semibold text-base">LibraAI Assistant</h2>
                     <div className="w-6" />
                 </div>
 
