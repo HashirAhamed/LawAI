@@ -27,9 +27,11 @@ function ChatWindow({
       {!activeConversation ? (
         <div className="flex-grow justify-center overflow-y-auto">
           <EmptyState
-            userName="User"              // or derive from profile later
-            onSend={(prompt) => onSend(prompt)}
-          />
+            value={input}
+            onChange={setInput}
+            onSubmit={onSend}
+            disabled={isStreaming}
+            userName="User" />
         </div>
       ) : (
         <>
