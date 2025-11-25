@@ -6,22 +6,12 @@ const conversationRoutes = require("./routes/conversation.routes");
 
 const app = express();
 
-/**
- * ------------------ 🔒 Robust CORS Setup ------------------
- * ✅ Allows:
- *   - Your production frontend (from env: CLIENT_ORIGIN)
- *   - All Vercel preview deployments (*.vercel.app)
- *   - Local development (localhost:5173)
- * ✅ Handles preflight requests
- * ✅ Avoids crashes on unapproved origins
- * ✅ Debug logs origin + route
- * -----------------------------------------------------------
- */
 const allowList = [
-  process.env.CLIENT_ORIGIN, // e.g. https://law-ai-sigma-two.vercel.app (set this in Railway)
+  process.env.CLIENT_ORIGIN, 
   "http://localhost:5173",
   "http://127.0.0.1:5173",
-  /\.vercel\.app$/, // Allow Vercel preview URLs
+  /\.vercel\.app$/, 
+  "capacitor://localhost",
 ];
 
 const corsOptions = {
@@ -39,11 +29,11 @@ const corsOptions = {
   },
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: false, // Only true if you use cookies or sessions
-  maxAge: 86400, // Cache preflight for 24h
+  credentials: false, 
+  maxAge: 86400, 
 };
 
-// 🔍 Debug incoming origins (helpful during deployment)
+
 app.use((req, _res, next) => {
   if (req.headers.origin) {
     console.log("🌍 Incoming request:", req.headers.origin, "| Path:", req.path);
@@ -51,18 +41,14 @@ app.use((req, _res, next) => {
   next();
 });
 
-// 🧠 Enable CORS before JSON parsing or routes
 app.use(cors(corsOptions));
 
-// 🧾 Body parser
 app.use(express.json());
 
-// 🧩 Connect to MongoDB
 connectDB();
 
-// 🧭 Routes
+// Routes
 app.use("/api", chatRoutes);
 app.use("/api/conversations", conversationRoutes);
 
-// ✅ Export for server.js
 module.exports = app;
